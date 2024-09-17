@@ -46,13 +46,9 @@ class Schema extends Migration{
 
     /**
      * @return void
-     * @throws DependencyException
-     * @throws NotFoundException
      */
     public function delete(): void {
-        if ($this->schema()->hasTable("seo")) {
-            $this->schema()->drop("seo");
-        }
+        // comment explaining why the method is empty
     }
 
 }
