@@ -144,7 +144,7 @@ class GetSeo extends AbstractPlugin{
      * @throws NotFoundException
      */
     private function processSchema(array $seo, array $breadcrumbs = null): void {
-        $this->getSchema($seo['type'], array_merge($this->getConfig('schema'), $seo), $breadcrumbs);
+        $this->getSchema($seo['type'], array_merge((is_null($this->getConfig('schema'))?[]:$this->getConfig('schema')), $seo), $breadcrumbs);
     }
 
 

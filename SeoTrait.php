@@ -378,8 +378,19 @@ trait SeoTrait {
         $apple = $this->getConfig('apple');
         $meta_apple='';
 
+        $favicon = $this->getConfig('favicon');
         if (!is_array($apple)){
             $apple = json_decode($apple, true);
+        }
+        elseif (empty($apple) && file_exists($this->filePath.$favicon)){
+            $apple[57] = $favicon;
+            $apple[72] = $favicon;
+            $apple[76] = $favicon;
+            $apple[114] = $favicon;
+            $apple[120] = $favicon;
+            $apple[144] = $favicon;
+            $apple[152] = $favicon;
+            $apple[180] = $favicon;
         }
 
         foreach ($apple as $size => $file){
@@ -388,10 +399,10 @@ trait SeoTrait {
             }
         }
         if ($meta_apple!==''){
-            $meta_apple=$this->metaTagStart.'name="apple-mobile-web-app-capable" content="yes" />'.$meta_apple;
+            $meta_apple=$this->metaTagStart.'name="mobile-web-app-capable" content="yes" />'.$meta_apple;
         }
         else {
-            $meta_apple=$this->metaTagStart.'name="apple-mobile-web-app-capable" content="no" />';
+            $meta_apple=$this->metaTagStart.'name="mobile-web-app-capable" content="no" />';
         }
         $this->meta['apple']=$meta_apple;
     }
