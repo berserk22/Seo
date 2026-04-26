@@ -16,6 +16,10 @@ trait SeoTrait {
 
     use App, MainTrait;
 
+    private function esc(string $value): string {
+        return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+
     /**
      * @var array
      */
@@ -118,33 +122,33 @@ trait SeoTrait {
         'standard' => [
             'organization.json',
             'website.json',
-            'local_business.json'
+            /*'local_business.json'*/
         ],
         'article' => [
             'organization.json',
             'website.json',
-            'local_business.json',
-            'breadcrumb_list.json',
+            /*'local_business.json',*/
+            /*'breadcrumb_list.json',*/
             'article.json'
         ],
         'product' => [
             'organization.json',
             'website.json',
-            'local_business.json',
+            /*'local_business.json',*/
             'breadcrumb_list.json',
             'product.json'
         ],
         'car'=>[
             'organization.json',
             'website.json',
-            'local_business.json',
+            /*'local_business.json',*/
             'breadcrumb_list.json',
-            'car.json'
+            /*'car.json'*/
         ],
         'job'=>[
             'organization.json',
             'website.json',
-            'local_business.json',
+            /*'local_business.json',*/
             'breadcrumb_list.json',
             'job.json'
         ]
@@ -218,13 +222,15 @@ trait SeoTrait {
             $this->config = $this->getContainer()->get('config')->getSetting("site");
             $this->config['schema'] = $this->getContainer()->get('config')->getSetting("schema");
             $settingsGroup = $this->getMainManager()->getSettingsGroupEntity()::where("key", "=", "general")->first();
-            $settings = $settingsGroup->getSettings();
-            foreach ($settings as $setting){
-                $this->config[str_replace("site_", "", $setting->key)] = $setting->value;
+            if ($settingsGroup !== null) {
+                $settings = $settingsGroup->getSettings();
+                foreach ($settings as $setting){
+                    $this->config[str_replace("site_", "", $setting->key)] = $setting->value;
+                }
             }
         }
         if ($key !== "") {
-            return $this->config[$key];
+            return $this->config[$key] ?? null;
         }
         else {
             return $this->config;
@@ -249,11 +255,15 @@ trait SeoTrait {
         return $this->getContainer()->get('Seo\Model');
     }
 
+    // Note: HTTP_X_FORWARDED_PROTO is trusted unconditionally; restrict to known proxy IPs at the server/firewall level.
     /**
      * @return string
      */
     public function getProtocol(): string {
-        return $_SERVER['SERVER_PORT'] === '443' ? 'https' : 'http';
+        if (isset($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+            return strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https' ? 'https' : 'http';
+        }
+        return (int)($_SERVER['SERVER_PORT'] ?? 80) === 443 ? 'https' : 'http';
     }
 
     /**
@@ -261,9 +271,16 @@ trait SeoTrait {
      */
     public function initializePaths(): void {
         $this->filePath = WEB_ROOT_DIR;
-        $this->path = $_SERVER['REQUEST_URI'];
-        $this->url = $this->getProtocol() . '://' . $_SERVER['HTTP_HOST'] . $this->path;
-        $this->website = $this->getProtocol() . '://' . $_SERVER['HTTP_HOST'];
+        $this->path     = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
+
+        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        // RFC 1123: max 253 Zeichen, Labels max 63 Zeichen, keine aufeinanderfolgenden Punkte
+        if (strlen($host) > 253 || !preg_match('/^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(:\d{1,5})?$/', $host)) {
+            $host = 'localhost';
+        }
+
+        $this->url     = $this->getProtocol() . '://' . $host . $this->path;
+        $this->website = $this->getProtocol() . '://' . $host;
     }
 
     /**
@@ -284,7 +301,7 @@ trait SeoTrait {
     public function getTitle(string $title, string $site_name="", string $delimiter = "|"): void {
         $robots = '';
         if (isset($this->meta['robots']) && !empty($this->meta['robots'])){
-            $robots .= $this->metaTagStart.'name="robots" content="'.$this->meta['robots'].'" />';
+            $robots .= $this->metaTagStart.'name="robots" content="'.$this->esc($this->meta['robots']).'" />';
             unset($this->meta['robots']);
         }
         else {
@@ -310,20 +327,25 @@ trait SeoTrait {
             $site_title = "";
         }
 
+        $escapedFull     = $this->esc($title . $site_title);
+        $escapedSiteName = $this->esc($site_name);
+
+        $this->meta['plain_title'] = $title . $site_title;
+
         $meta = $this->metaTagStart.'property="og:locale" content="de_DE">';
-        $meta.='<title>'.$title.$site_title.'</title>';
+        $meta.='<title>'.$escapedFull.'</title>';
         foreach ($this->metaTitle as $key => $name){
-            $meta.=$this->metaTagStart.str_replace($this->twitter, "", $key).'="'.$name.$this->contentStr.$title.$site_title.'">';
+            $meta.=$this->metaTagStart.str_replace($this->twitter, "", $key).'="'.$name.$this->contentStr.$escapedFull.'">';
         }
         if (!empty($site_name)) {
-            $meta .= $this->metaTagStart.'"property"="og:site_name" content="' . $site_name . '">';
+            $meta .= $this->metaTagStart.'property="og:site_name" content="'.$escapedSiteName.'">';
         }
 
         $meta.=$robots;
         $this->meta['title']=$meta;
 
         if (isset($this->meta['keywords']) && !empty($this->meta['keywords'])){
-            $this->meta['keywords'] = $this->metaTagStart.'name="keywords" content="'.$this->meta['keywords'].'">';
+            $this->meta['keywords'] = $this->metaTagStart.'name="keywords" content="'.$this->esc($this->meta['keywords']).'">';
         }
     }
 
@@ -335,10 +357,11 @@ trait SeoTrait {
         if (!empty($description)){
             $meta='';
             if ($description === '...'){
-                $description = $this->meta['title'];
+                $description = $this->meta['plain_title'] ?? '';
             }
+            $escaped = $this->esc($description);
             foreach ($this->metaDescription as $key => $name){
-                $meta.=$this->metaTagStart.str_replace($this->twitter, "", $key).'="'.$name.$this->contentStr.$description.'">';
+                $meta.=$this->metaTagStart.str_replace($this->twitter, "", $key).'="'.$name.$this->contentStr.$escaped.'">';
             }
             $this->meta['description']=$meta;
         }
@@ -349,8 +372,9 @@ trait SeoTrait {
      */
     public function getUrl(): void {
         $meta='';
+        $escapedUrl = $this->esc($this->url);
         foreach ($this->metaUrl as $key => $name){
-            $meta.=$this->metaTagStart.str_replace($this->twitter, "", $key).'="'.$name.$this->contentStr.$this->url.'">';
+            $meta.=$this->metaTagStart.str_replace($this->twitter, "", $key).'="'.$name.$this->contentStr.$escapedUrl.'">';
         }
         $this->meta['url']=$meta;
     }
@@ -364,7 +388,7 @@ trait SeoTrait {
         $favicon = $this->getConfig('favicon');
         $meta_favicon = "";
         if (file_exists($this->filePath.$favicon)){
-            $meta_favicon='<link rel="icon" type="image/vnd.microsoft.icon" href="'.$this->fileModified($this->filePath.$favicon).'" /><link rel="shortcut icon" type="image/x-icon" href="'.$this->fileModified($this->filePath.$favicon).'" />';
+            $meta_favicon='<link rel="icon" type="image/vnd.microsoft.icon" href="'.$this->esc($this->fileModified($this->filePath.$favicon)).'" /><link rel="shortcut icon" type="image/x-icon" href="'.$this->esc($this->fileModified($this->filePath.$favicon)).'" />';
         }
         $this->meta['favicon']=$meta_favicon;
     }
@@ -395,7 +419,7 @@ trait SeoTrait {
 
         foreach ($apple as $size => $file){
             if (file_exists($this->filePath.$file)){
-                $meta_apple.='<link rel="apple-touch-icon" sizes="'.$size.'×'.$size.'" href="'.$this->fileModified($this->filePath.$file).'" />';
+                $meta_apple.='<link rel="apple-touch-icon" sizes="'.(int)$size.'x'.(int)$size.'" href="'.$this->esc($this->fileModified($this->filePath.$file)).'" />';
             }
         }
         if ($meta_apple!==''){
@@ -416,7 +440,15 @@ trait SeoTrait {
         if (file_exists($variable)) {
             return $this->website.$file.'?rev='.filemtime($variable);
         }
-        return $this->website.$file.'?rev='.time();
+        return $this->website . $file;
+    }
+
+    /**
+     * @return string
+     */
+    public function getSchemaDir(): string {
+        // SeoTrait liegt in modules/Seo/ → 2 Ebenen hoch = Projekt-Root
+        return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'schema' . DIRECTORY_SEPARATOR;
     }
 
     /**
@@ -426,12 +458,11 @@ trait SeoTrait {
      * @return void
      */
     public function handleImageType(string $file, string $general_type, string $title): void {
-        $url = false;
-        $size = $this->getImageSize($file, $url);
+        $size = $this->getImageSize($file);
 
-        $meta = $this->generateMetaTags($file, $url, $title);
+        $meta = $this->generateMetaTags($file, $title);
 
-        if ($url === false && $general_type === 'article') {
+        if ($general_type === 'article') {
             $meta .= $this->addImageDimensions($size);
         }
 
@@ -440,33 +471,30 @@ trait SeoTrait {
 
     /**
      * @param string $file
-     * @param bool $url
      * @return int[]
      */
-    public function getImageSize(string $file, bool &$url): array {
-        $size = getimagesize($this->filePath . $file);
-        if (is_bool($size) && $size === false && $file !== "") {
-            $size = getimagesize($file);
-            $url = true;
-        }
-        return $size ?: [0, 0]; // Return a default size if getimagesize fails
+    public function getImageSize(string $file): array {
+        $size = @getimagesize($this->filePath . $file);
+        return $size ?: [0, 0];
     }
 
     /**
      * @param string $file
-     * @param bool $url
      * @param string $title
      * @return string
      */
-    public function generateMetaTags(string $file, bool $url, string $title): string {
+    public function generateMetaTags(string $file, string $title): string {
         $meta = '';
+        $escapedUrl   = $this->esc($this->fileModified($this->filePath . $file));
+        $escapedTitle = $this->esc($title);
+
         foreach ($this->metaImage as $key => $name) {
-            $meta .= $this->metaTagStart . str_replace($this->twitter, "", $key) . '="' . $name . $this->contentStr . (!$url ? $this->fileModified($this->filePath . $file) : $file) . '">';
+            $meta .= $this->metaTagStart . str_replace($this->twitter, "", $key) . '="' . $name . $this->contentStr . $escapedUrl . '">';
         }
 
         if (!empty($title)) {
-            $meta .= $this->metaTagStart . 'name="twitter:image:alt" content="' . $title . '">';
-            $meta .= $this->metaTagStart . 'property="og:image:alt" content="' . $title . '">';
+            $meta .= $this->metaTagStart . 'name="twitter:image:alt" content="' . $escapedTitle . '">';
+            $meta .= $this->metaTagStart . 'property="og:image:alt" content="' . $escapedTitle . '">';
         }
 
         return $meta;
@@ -477,8 +505,8 @@ trait SeoTrait {
      * @return string
      */
     public function addImageDimensions(array $size): string {
-        return $this->metaTagStart . 'property="og:image:width" content="' . $size[0] . '">' .
-            $this->metaTagStart . 'property="og:image:height" content="' . $size[1] . '">';
+        return $this->metaTagStart . 'property="og:image:width" content="' . (int)$size[0] . '">' .
+            $this->metaTagStart . 'property="og:image:height" content="' . (int)$size[1] . '">';
     }
 
     /**
@@ -493,9 +521,9 @@ trait SeoTrait {
 
             foreach ($item as $k => $content) {
                 if ($k === 'og:type' && !empty($type)) {
-                    $meta .= $this->metaTagStart . $name . '="' . $k . $this->contentStr . $type . '" />';
+                    $meta .= $this->metaTagStart . $name . '="' . $this->esc($k) . $this->contentStr . $this->esc($type) . '" />';
                 } else {
-                    $meta .= $this->metaTagStart . $name . '="' . $k . $this->contentStr . $this->getTwitterCardContent($type, $k, $content) . '" />';
+                    $meta .= $this->metaTagStart . $name . '="' . $this->esc($k) . $this->contentStr . $this->esc($this->getTwitterCardContent($type, $k, $content)) . '" />';
                 }
             }
         }
@@ -513,7 +541,7 @@ trait SeoTrait {
 
         foreach ($this->type[$type] as $param) {
             if (isset($params[$param])) {
-                $meta .= $this->metaTagStart . 'property="' . $this->getTypeMetaKey($type, $param) . $this->contentStr . $params[$param] . '" />';
+                $meta .= $this->metaTagStart . 'property="' . $this->esc($this->getTypeMetaKey($type, $param)) . $this->contentStr . $this->esc((string)$params[$param]) . '" />';
             }
         }
 

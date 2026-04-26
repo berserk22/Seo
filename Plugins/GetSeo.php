@@ -37,9 +37,14 @@ class GetSeo extends AbstractPlugin{
 
             $this->processMedia($seo, $seoEntity);
             $this->processGeneralType($seo);
-            $this->processSchema($seo, $breadcrumbs);
+            //$this->processSchema($seo, $breadcrumbs);
 
-            $this->meta['test'] = $this->getSeoModel()->getSchema();
+            $info = json_decode(file_get_contents($this->getSchemaDir() . "schema.json"), true);
+            $this->getSeoModel()->buildJsonLd($info, $breadcrumbs, [
+                'orgType'     => $this->getConfig('org_type') ?? 'LocalBusiness',
+                'websiteName' => $this->getConfig('name')     ?? '',
+            ]);
+            $this->meta['schema'] = $this->getSeoModel()->getSchema();
         }
         return $this->meta;
     }
@@ -226,11 +231,11 @@ class GetSeo extends AbstractPlugin{
         if (empty($type)){
             $type = 'standard';
         }
-        $dir = realpath(__DIR__.DIRECTORY_SEPARATOR."..".DIRECTORY_SEPARATOR."..".DIRECTORY_SEPARATOR."..".DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR."config".DIRECTORY_SEPARATOR."schema".DIRECTORY_SEPARATOR;
+        $dir = $this->getSchemaDir();
         $schema = '';
-        if (isset($this->schema_list[$type])){
+        if (isset($this->schemaList[$type])){
             $tmp_schema = '';
-            foreach ($this->schema_list[$type] as $file){
+            foreach ($this->schemaList[$type] as $file){
                 if (file_exists($dir.$file)){
                     $content = json_decode(file_get_contents($dir.$file));
                     $category = str_replace('.json', '', $file);
@@ -358,6 +363,7 @@ class GetSeo extends AbstractPlugin{
             $max = 1;
             $min = 5;
             $sum = 0;
+            $raiting_id = null;
             foreach ($raitings as $raiting){
                 $sum+=$raiting->raiting;
                 if ($max < $raiting->raiting){
@@ -375,7 +381,7 @@ class GetSeo extends AbstractPlugin{
             $content->aggregateRating->ratingCount = $raitings->count();
             $content->aggregateRating->reviewCount = 1;
 
-            $review_raiting = Raiting::find($raiting_id);
+            $review_raiting = $raiting_id ? Raiting::find($raiting_id) : $raitings->first();
 
             $content->review->reviewRating->ratingValue = round($sum/$raitings->count(),1);
             $content->review->reviewRating->bestRating = $max;
